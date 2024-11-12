@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 定义模型和数据集列表
-models=("roberta-base" "bert-base-uncased" "allenai/scibert_scivocab_uncased")
+models=("roberta-base")
 datasets=("restaurant_sup" "acl_sup" )
 # 
 # 固定随机种子
