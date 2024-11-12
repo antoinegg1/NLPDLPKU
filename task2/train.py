@@ -18,115 +18,114 @@ from transformers import (
     set_seed,
     TrainerCallback,
 )
-import wandb  # 导入 wandb
+import wandb  # Import wandb for logging
 
 from dataHelper import get_dataset
 
-# 定义数据和模型的参数
+# Define model and data arguments
 @dataclass
 class ModelArguments:
     model_name_or_path: str = field(
-        metadata={"help": "预训练模型的名称或路径"}
+        metadata={"help": "Name or path of the pretrained model"}
     )
     
 @dataclass
 class DataTrainingArguments:
     dataset_name: str = field(
-        metadata={"help": "数据集的名称，或者列表，逗号分隔"}
+        metadata={"help": "Dataset name, or a comma-separated list of datasets"}
     )
     sep_token: str = field(
-        default="<sep>", metadata={"help": "分隔符 token"}
+        default="<sep>", metadata={"help": "Separator token"}
     )
     max_seq_length: int = field(
-        default=128, metadata={"help": "输入序列的最大长度"}
+        default=128, metadata={"help": "Maximum length of the input sequence"}
     )
+
 def main():
     '''
-    初始化 logging、seed、argparse...
+    Initialize logging, random seed, argument parsing, etc.
     '''
 
-    # 配置 logging
+    # Configure logging
     logger = logging.getLogger(__name__)
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
         level=logging.INFO,
     )
-    # 使用 HfArgumentParser 解析参数
+    # Parse arguments using HfArgumentParser
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
-    
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
     
     '''
-        初始化 wandb
+    Initialize wandb for logging
     '''
     training_args.report_to = ["wandb"]
     training_args.log_level = "info"
     if 'wandb' in training_args.report_to:
         wandb.init(project="NLPDL", name=training_args.run_name)
-    # 设置随机种子
+
+    # Set random seed for reproducibility
     set_seed(training_args.seed)
 
-    # 日志参数
-    logger.info(f"训练参数：{training_args}")
-
-
-    
+    # Log training arguments
+    logger.info(f"Training arguments: {training_args}")
 
     '''
-        加载数据集
+    Load datasets
     '''
-    # 从 dataHelper.py 中加载数据集
+    # Load dataset(s) from dataHelper.py
     if ',' in data_args.dataset_name:
         dataset_names = [name.strip() for name in data_args.dataset_name.split(',')]
     else:
         dataset_names = [data_args.dataset_name]
     raw_datasets = get_dataset(dataset_names, sep_token="[SEP]")
-    label_num=len(set(raw_datasets['train']['label']))
+    label_num = len(set(raw_datasets['train']['label']))
 
     '''
-        加载模型和 tokenizer
+    Load model and tokenizer
     '''
-    # 自动加载模型配置、tokenizer 和模型
+    # Automatically load model configuration, tokenizer, and model
     config = AutoConfig.from_pretrained(model_args.model_name_or_path, num_labels=label_num)
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, use_fast=True)
     model = AutoModelForSequenceClassification.from_pretrained(model_args.model_name_or_path, config=config)
 
     '''
-        处理数据集并构建数据 collator
+    Process the dataset and create data collator
     '''
     def preprocess_function(examples):
-        # 对文本进行编码
+        # Encode the text and add labels to the result
         result = tokenizer(
             examples['text'],
             padding=False,
             truncation=True,
             max_length=data_args.max_seq_length
         )
-        # 将 labels 添加到结果中
         result['label'] = examples['label']
         return result
 
-    # 获取需要删除的列
+    # Get the columns to remove after processing
     column_names = raw_datasets["train"].column_names
     processed_datasets = raw_datasets.map(
         preprocess_function,
         batched=True,
         remove_columns=column_names,
-        desc="数据集预处理"
+        desc="Dataset preprocessing"
     )
 
-    # 使用 DataCollatorWithPadding 处理批量数据
+    # Use DataCollatorWithPadding to handle batch padding
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
     '''
-        定义评估指标
+    Define evaluation metrics
     '''
-    # 加载评估指标
+    # Load evaluation metrics
     accuracy = evaluate.load("accuracy")
     f1 = evaluate.load("f1")
 
     def compute_metrics(p):
-        preds = p.predictions.argmax(-1)
+        # Calculate accuracy and F1 scores
+        preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
+        preds = preds.argmax(-1)
         labels = p.label_ids
         acc = accuracy.compute(predictions=preds, references=labels)
         f1_micro = f1.compute(predictions=preds, references=labels, average='micro')
@@ -138,7 +137,7 @@ def main():
         }
 
     '''
-        初始化 Trainer
+    Initialize Trainer
     '''
     trainer = Trainer(
         model=model,
@@ -151,23 +150,22 @@ def main():
     )
 
     '''
-        开始训练
+    Start training
     '''
     if training_args.do_train:
-        logger.info("*** 开始训练 ***")
+        logger.info("*** Starting training ***")
         trainer.train()
 
     '''
-        开始评估
+    Start evaluation
     '''
     if training_args.do_eval:
-        logger.info("*** 开始评估 ***")
+        logger.info("*** Starting evaluation ***")
         metrics = trainer.evaluate()
-
         trainer.log_metrics("eval", metrics)
 
     '''
-        训练完成，关闭 wandb 运行
+    Finish wandb run
     '''
     if 'wandb' in training_args.report_to:
         wandb.finish()

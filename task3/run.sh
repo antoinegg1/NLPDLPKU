@@ -1,35 +1,36 @@
 #!/bin/bash
 
-# 定义模型和数据集列表
+# Define lists for models and datasets
 models=("roberta-base")
-datasets=("restaurant_sup" "acl_sup" )
-# 
-# 固定随机种子
+datasets=("restaurant_sup" "acl_sup")
+
+# Set fixed random seed and training parameters
 SEED=42
 EPOCHS=4
 BATCH_SIZE=64
 LEARNING_RATE=1e-5
 
-# 遍历模型和数据集
+# Iterate over models and datasets
 for MODEL_NAME in "${models[@]}"
 do
     for DATASET_NAME in "${datasets[@]}"
     do
 
-        # 运行 5 次训练
+        # Run training 5 times
         for RUN in {1..5}
         do
-            echo "运行模型 $MODEL_NAME 在数据集 $DATASET_NAME 上的第 $RUN 次训练..."
-            # 设置输出和日志目录，避免覆盖
+            echo "Running model $MODEL_NAME on dataset $DATASET_NAME, iteration $RUN..."
+            
+            # Set output and logging directories to avoid overwriting
             OUTPUT_DIR="./output/${MODEL_NAME}_${DATASET_NAME}/run_$RUN"
             LOGGING_DIR="./logs/${MODEL_NAME}_${DATASET_NAME}/run_$RUN"
             mkdir -p $OUTPUT_DIR
             mkdir -p $LOGGING_DIR
 
-            # 导出 RUN 环境变量，供 wandb 使用（可选）
+            # Export RUN environment variable for wandb (optional)
             export RUN=$RUN
 
-            # 运行训练脚本
+            # Run training script
             python train.py \
                 --model_name_or_path $MODEL_NAME \
                 --dataset_name $DATASET_NAME \
